@@ -202,6 +202,43 @@
             color: #e06060
         }
 
+        .song-chip .chip-share {
+            color: rgba(255, 255, 255, .3);
+            font-size: 13px;
+            line-height: 1;
+            padding: 0 2px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            border-radius: 50%;
+            transition: color .15s
+        }
+
+        .song-chip .chip-share:hover {
+            color: var(--gold)
+        }
+
+        #share-toast {
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%) translateY(12px);
+            background: rgba(205, 178, 124, .95);
+            color: #241a08;
+            font: 600 13px system-ui, sans-serif;
+            padding: 9px 20px;
+            border-radius: 20px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .25s, transform .25s;
+            z-index: 99
+        }
+
+        #share-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0)
+        }
+
         #setup {
             position: fixed;
             inset: 0;
@@ -296,6 +333,7 @@
         </div>
         <p>→ / Space / click = next · ← = back · F = fullscreen · E = edit lyrics</p>
     </div>
+    <div id="share-toast">Link copied!</div>
     <script>
         const cv = document.getElementById('cv'), $ = id => document.getElementById(id), R = Math.random, clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
         let c = cv.getContext('2d'), W, H, u, D = 1; function rs() { D = devicePixelRatio || 1; W = cv.width = innerWidth * D; H = cv.height = innerHeight * D; u = H / 100 } rs(); addEventListener('resize', rs);
@@ -401,6 +439,40 @@
             const first = lyrics.trim().split('\n').find(l => l.trim() && !/^\[/.test(l.trim()));
             return first ? first.trim().slice(0, 48) : 'Untitled';
         }
+        // ── Cloud share via /api/share (Vercel KV) ──────────────────────────────
+        let toastTimer;
+        function showToast(msg) {
+            const t = $('share-toast'); t.textContent = msg; t.classList.add('show');
+            clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+        }
+        async function uploadLyrics(lyrics, title) {
+            const res = await fetch('/api/share', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lyrics, title })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Upload failed');
+            return data.id;
+        }
+        async function fetchLyrics(id) {
+            const res = await fetch('/api/share?id=' + encodeURIComponent(id));
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Not found');
+            return data.lyrics;
+        }
+        async function shareUrl(lyrics, title) {
+            showToast('Uploading…');
+            try {
+                const id = await uploadLyrics(lyrics, title);
+                const url = location.origin + location.pathname + '?id=' + id;
+                await navigator.clipboard.writeText(url).catch(() => prompt('Copy this link:', url));
+                showToast('Link copied!');
+            } catch (e) {
+                showToast('Share failed: ' + (e.message || e));
+            }
+        }
+
         function renderSongs() {
             const arr = loadSongs(), list = $('song-list');
             $('saved-section').style.display = arr.length ? 'flex' : 'none';
@@ -408,10 +480,12 @@
             arr.forEach((song, idx) => {
                 const chip = document.createElement('div'); chip.className = 'song-chip';
                 const name = document.createElement('span'); name.className = 'chip-name'; name.textContent = song.title;
+                const shr = document.createElement('button'); shr.className = 'chip-share'; shr.textContent = '🔗'; shr.title = 'Copy shareable link';
+                shr.onclick = e => { e.stopPropagation(); shareUrl(song.lyrics, song.title) };
                 const del = document.createElement('button'); del.className = 'chip-del'; del.textContent = '×'; del.title = 'Delete';
                 del.onclick = e => { e.stopPropagation(); const a = loadSongs(); a.splice(idx, 1); saveSongs(a); renderSongs() };
                 chip.onclick = () => { $('in').value = song.lyrics; start() };
-                chip.appendChild(name); chip.appendChild(del); list.appendChild(chip);
+                chip.appendChild(name); chip.appendChild(shr); chip.appendChild(del); list.appendChild(chip);
             });
         }
         $('save-btn').onclick = () => {
@@ -423,6 +497,22 @@
             $('msg').textContent = `Saved: "${title}"`;
             setTimeout(() => { $('msg').textContent = '' }, 2500);
         };
+
+        // ── Auto-start from shared URL (?id=...) ─────────────────────────────────
+        (async function () {
+            const id = new URLSearchParams(location.search).get('id');
+            if (!id) return;
+            $('msg').textContent = 'Loading shared song…';
+            try {
+                const lyrics = await fetchLyrics(id);
+                if (!lyrics) { $('msg').textContent = 'Song not found.'; return }
+                $('in').value = lyrics;
+                setTimeout(start, 80);
+            } catch (e) {
+                $('msg').textContent = 'Failed to load: ' + (e.message || e);
+            }
+        })();
+
         renderSongs();
 
         addEventListener('keydown', e => {
