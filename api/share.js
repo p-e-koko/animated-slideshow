@@ -1,10 +1,16 @@
 import { createClient } from '@libsql/client';
 
-function getDatabase() {
+function getDatabaseConfig() {
     const url = process.env.TURSO_DATABASE_URL;
     const authToken = process.env.TURSO_AUTH_TOKEN;
-    if (!url || !authToken) return null;
-    return createClient({ url, authToken });
+    return {
+        url,
+        authToken,
+        missing: [
+            !url && 'TURSO_DATABASE_URL',
+            !authToken && 'TURSO_AUTH_TOKEN'
+        ].filter(Boolean)
+    };
 }
 
 let schemaReady;
@@ -31,15 +37,16 @@ export default async function handler(req, res) {
 
     if (req.method === 'OPTIONS') return res.status(200).end();
 
-    const db = getDatabase();
-    if (!db) {
-        console.error('Share API is missing TURSO_DATABASE_URL or TURSO_AUTH_TOKEN.');
+    const config = getDatabaseConfig();
+    if (config.missing.length) {
+        console.error(`Share API is missing: ${config.missing.join(', ')}`);
         return res.status(503).json({
-            error: 'Share service is not configured. Add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN to the deployment.'
+            error: `Share service is not configured. Missing: ${config.missing.join(', ')}.`
         });
     }
 
     try {
+        const db = createClient({ url: config.url, authToken: config.authToken });
         await ensureSchema(db);
 
         // POST /api/share  →  { lyrics, title }  →  { id }
