@@ -445,20 +445,30 @@
             const t = $('share-toast'); t.textContent = msg; t.classList.add('show');
             clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
         }
+        async function readApiResponse(res) {
+            const text = await res.text();
+            let data;
+            try {
+                data = text ? JSON.parse(text) : {};
+            } catch {
+                const detail = text.trim().replace(/\s+/g, ' ').slice(0, 160);
+                throw new Error(`Server returned ${res.status}${detail ? `: ${detail}` : ''}`);
+            }
+            if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
+            return data;
+        }
         async function uploadLyrics(lyrics, title) {
             const res = await fetch('/api/share', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ lyrics, title })
             });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Upload failed');
+            const data = await readApiResponse(res);
             return data.id;
         }
         async function fetchLyrics(id) {
             const res = await fetch('/api/share?id=' + encodeURIComponent(id));
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Not found');
+            const data = await readApiResponse(res);
             return data.lyrics;
         }
         async function shareUrl(lyrics, title) {
