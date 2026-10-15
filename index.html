@@ -439,7 +439,7 @@
             const first = lyrics.trim().split('\n').find(l => l.trim() && !/^\[/.test(l.trim()));
             return first ? first.trim().slice(0, 48) : 'Untitled';
         }
-        // ── Cloud share via /api/share (Vercel KV) ──────────────────────────────
+        // ── Cloud share via /api/share (Turso) ──────────────────────────────────
         let toastTimer;
         function showToast(msg) {
             const t = $('share-toast'); t.textContent = msg; t.classList.add('show');
